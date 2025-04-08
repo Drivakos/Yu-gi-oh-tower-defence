@@ -1,13 +1,14 @@
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using System;
 using System.Collections;
 using System.Collections.Generic;
-using TMPro;
-using UnityEngine.UI;
-using YuGiOhTowerDefense.Monsters;
+using YuGiOhTowerDefense.UI;
 using YuGiOhTowerDefense.Cards;
-using System;
+using YuGiOhTowerDefense.Monsters;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Managers
 {
     [Serializable]
     public class TutorialStep

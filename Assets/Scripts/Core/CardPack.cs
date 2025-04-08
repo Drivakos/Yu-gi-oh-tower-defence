@@ -1,58 +1,35 @@
 using System.Collections.Generic;
 using UnityEngine;
+using System;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Cards
 {
-    [CreateAssetMenu(fileName = "New Card Pack", menuName = "YuGiOh/Card Pack")]
-    public class CardPack : ScriptableObject
+    [Serializable]
+    public class CardPack
     {
-        [Header("Pack Information")]
-        [SerializeField] private string packName;
-        [SerializeField] [TextArea(2, 4)] private string description;
-        [SerializeField] private Sprite packIcon;
-        [SerializeField] private int cost;
-        [SerializeField] private int cardsPerPack = 5;
-
-        [Header("Card Distribution")]
-        [SerializeField] private List<Card> commonCards = new List<Card>();
-        [SerializeField] private List<Card> rareCards = new List<Card>();
-        [SerializeField] private List<Card> superRareCards = new List<Card>();
-        [SerializeField] private List<Card> ultraRareCards = new List<Card>();
-
-        [Header("Rarity Chances")]
-        [Range(0, 100)] [SerializeField] private float commonChance = 70f;
-        [Range(0, 100)] [SerializeField] private float rareChance = 20f;
-        [Range(0, 100)] [SerializeField] private float superRareChance = 8f;
-        [Range(0, 100)] [SerializeField] private float ultraRareChance = 2f;
-
-        public string PackName => packName;
-        public string Description => description;
-        public Sprite PackIcon => packIcon;
-        public int Cost => cost;
-        public int CardsPerPack => cardsPerPack;
-
-        public List<Card> GetCardsByRarity(CardRarity rarity)
-        {
-            return rarity switch
-            {
-                CardRarity.Common => commonCards,
-                CardRarity.Rare => rareCards,
-                CardRarity.SuperRare => superRareCards,
-                CardRarity.UltraRare => ultraRareCards,
-                _ => new List<Card>()
-            };
-        }
-
-        public float GetRarityChance(CardRarity rarity)
-        {
-            return rarity switch
-            {
-                CardRarity.Common => commonChance,
-                CardRarity.Rare => rareChance,
-                CardRarity.SuperRare => superRareChance,
-                CardRarity.UltraRare => ultraRareChance,
-                _ => 0f
-            };
-        }
+        public string id;
+        public string name;
+        public string description;
+        public int cost;
+        public int cardCount;
+        public Sprite packImage;
+        
+        [Header("Card Type Weights")]
+        public float normalMonsterWeight = 0.4f;
+        public float effectMonsterWeight = 0.3f;
+        public float ritualMonsterWeight = 0.1f;
+        public float fusionMonsterWeight = 0.1f;
+        public float synchroMonsterWeight = 0.05f;
+        public float xyzMonsterWeight = 0.03f;
+        public float linkMonsterWeight = 0.02f;
+        public float spellCardWeight = 0.3f;
+        public float trapCardWeight = 0.2f;
+        
+        [Header("Rarity Weights")]
+        public float commonWeight = 0.6f;
+        public float rareWeight = 0.25f;
+        public float superRareWeight = 0.1f;
+        public float ultraRareWeight = 0.04f;
+        public float secretRareWeight = 0.01f;
     }
 } 
