@@ -4,82 +4,92 @@ namespace YuGiOhTowerDefense.Core
 {
     public class Tile : MonoBehaviour
     {
-        [SerializeField] private MeshRenderer meshRenderer;
-        [SerializeField] private Color defaultColor = Color.white;
-        [SerializeField] private Color highlightColor = Color.yellow;
-        [SerializeField] private Color occupiedColor = Color.gray;
+        private Vector2Int gridPosition;
+        private Card occupiedCard;
+        private MeshRenderer meshRenderer;
         
-        private int gridX;
-        private int gridZ;
-        private bool isOccupied;
-        private Monster placedMonster;
+        public Vector2Int GridPosition => gridPosition;
+        public bool IsOccupied => occupiedCard != null;
+        public Card OccupiedCard => occupiedCard;
         
-        public void Initialize(int x, int z)
+        private void Awake()
         {
-            gridX = x;
-            gridZ = z;
-            isOccupied = false;
-            placedMonster = null;
+            meshRenderer = GetComponent<MeshRenderer>();
+            if (meshRenderer == null)
+            {
+                meshRenderer = gameObject.AddComponent<MeshRenderer>();
+            }
             
-            // Set default color
+            // Add a simple quad mesh for visualization
+            MeshFilter meshFilter = GetComponent<MeshFilter>();
+            if (meshFilter == null)
+            {
+                meshFilter = gameObject.AddComponent<MeshFilter>();
+                meshFilter.mesh = CreateQuadMesh();
+            }
+        }
+        
+        public void Initialize(Vector2Int position, Material defaultMaterial)
+        {
+            gridPosition = position;
+            SetMaterial(defaultMaterial);
+        }
+        
+        public void Occupy(Card card)
+        {
+            occupiedCard = card;
+            card.transform.parent = transform;
+        }
+        
+        public void Vacate()
+        {
+            if (occupiedCard != null)
+            {
+                occupiedCard.transform.parent = null;
+                occupiedCard = null;
+            }
+        }
+        
+        public void SetMaterial(Material material)
+        {
             if (meshRenderer != null)
             {
-                meshRenderer.material.color = defaultColor;
+                meshRenderer.material = material;
             }
         }
         
-        public void Highlight(bool highlight)
+        private Mesh CreateQuadMesh()
         {
-            if (meshRenderer != null && !isOccupied)
-            {
-                meshRenderer.material.color = highlight ? highlightColor : defaultColor;
-            }
-        }
-        
-        public void SetOccupied(bool occupied)
-        {
-            isOccupied = occupied;
+            Mesh mesh = new Mesh();
             
-            if (meshRenderer != null)
+            Vector3[] vertices = new Vector3[4]
             {
-                meshRenderer.material.color = occupied ? occupiedColor : defaultColor;
-            }
-        }
-        
-        public void SetPlacedMonster(Monster monster)
-        {
-            placedMonster = monster;
-            SetOccupied(monster != null);
-        }
-        
-        public bool IsOccupied()
-        {
-            return isOccupied;
-        }
-        
-        public Monster GetPlacedMonster()
-        {
-            return placedMonster;
-        }
-        
-        public int GetGridX()
-        {
-            return gridX;
-        }
-        
-        public int GetGridZ()
-        {
-            return gridZ;
-        }
-        
-        private void OnMouseEnter()
-        {
-            Highlight(true);
-        }
-        
-        private void OnMouseExit()
-        {
-            Highlight(false);
+                new Vector3(-0.5f, 0, -0.5f),
+                new Vector3(0.5f, 0, -0.5f),
+                new Vector3(-0.5f, 0, 0.5f),
+                new Vector3(0.5f, 0, 0.5f)
+            };
+            
+            int[] triangles = new int[6]
+            {
+                0, 2, 1,
+                2, 3, 1
+            };
+            
+            Vector2[] uv = new Vector2[4]
+            {
+                new Vector2(0, 0),
+                new Vector2(1, 0),
+                new Vector2(0, 1),
+                new Vector2(1, 1)
+            };
+            
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+            mesh.uv = uv;
+            mesh.RecalculateNormals();
+            
+            return mesh;
         }
     }
 } 
