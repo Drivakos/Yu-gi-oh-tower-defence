@@ -1,9 +1,11 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
-using YuGiOhTowerDefense.Core;
+using YuGiOhTowerDefense.Base;
+using YuGiOhTowerDefense.Utils;
+using YuGiOhTowerDefense.Cards;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Monsters
 {
     public class Enemy : MonoBehaviour
     {
@@ -86,12 +88,14 @@ namespace YuGiOhTowerDefense.Core
         {
             if (hitEffectPrefab != null)
             {
-                hitEffectPool = new ObjectPool(hitEffectPrefab, poolSize);
+                hitEffectPool = gameObject.AddComponent<ObjectPool>();
+                hitEffectPool.Initialize(hitEffectPrefab, poolSize);
             }
             
             if (deathEffectPrefab != null)
             {
-                deathEffectPool = new ObjectPool(deathEffectPrefab, poolSize);
+                deathEffectPool = gameObject.AddComponent<ObjectPool>();
+                deathEffectPool.Initialize(deathEffectPrefab, poolSize);
             }
         }
         

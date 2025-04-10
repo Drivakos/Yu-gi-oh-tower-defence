@@ -1,8 +1,10 @@
 using UnityEngine;
 using System.Collections.Generic;
-using YuGiOhTowerDefense.Core;
+using YuGiOhTowerDefense.Base;
+using YuGiOhTowerDefense.Utils;
+using YuGiOhTowerDefense.Cards;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Factories
 {
     public class CardFactory : MonoBehaviour
     {
@@ -39,17 +41,20 @@ namespace YuGiOhTowerDefense.Core
         {
             if (monsterCardPrefab != null)
             {
-                monsterCardPool = new ObjectPool(monsterCardPrefab, poolSize);
+                monsterCardPool = gameObject.AddComponent<ObjectPool>();
+                monsterCardPool.Initialize(monsterCardPrefab, poolSize);
             }
             
             if (spellCardPrefab != null)
             {
-                spellCardPool = new ObjectPool(spellCardPrefab, poolSize);
+                spellCardPool = gameObject.AddComponent<ObjectPool>();
+                spellCardPool.Initialize(spellCardPrefab, poolSize);
             }
             
             if (trapCardPrefab != null)
             {
-                trapCardPool = new ObjectPool(trapCardPrefab, poolSize);
+                trapCardPool = gameObject.AddComponent<ObjectPool>();
+                trapCardPool.Initialize(trapCardPrefab, poolSize);
             }
         }
         

@@ -6,14 +6,29 @@ namespace YuGiOh.Managers
     {
         protected virtual void Awake()
         {
-            if (Instance == null)
-            {
-                Instance = this;
-                DontDestroyOnLoad(gameObject);
-            }
-            else
+            // Ensure only one instance exists
+            if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
+                return;
+            }
+            
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+            
+            OnAwake();
+        }
+        
+        protected virtual void OnAwake()
+        {
+            // Override this method in derived classes for additional initialization
+        }
+        
+        protected virtual void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
             }
         }
         

@@ -1,199 +1,78 @@
 using UnityEngine;
 using System;
 using System.Collections.Generic;
+using YuGiOhTowerDefense.Cards;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Base
 {
     [Serializable]
-    public class YuGiOhCard
+    public class YuGiOhCard : MonoBehaviour
     {
         // Basic card information
-        public string id;
-        public string name;
-        public string type;
-        public string desc;
-        public string race;
-        public string archetype;
+        [SerializeField] protected string cardName;
+        [SerializeField] protected string description;
+        [SerializeField] protected Sprite cardImage;
+        [SerializeField] protected CardRarity rarity;
+        [SerializeField] protected CardType cardType;
         
-        // Card stats for tower defense gameplay
-        public int attack;
-        public int defense;
-        public int level;
-        public int cost;
+        // Card stats
+        [SerializeField] protected int level;
+        [SerializeField] protected int attack;
+        [SerializeField] protected int defense;
         
-        // Card rarity and set information
-        public string rarity;
-        public List<CardSet> cardSets;
+        // Card effects
+        [SerializeField] protected List<CardEffect> effects = new List<CardEffect>();
         
-        // Card images
-        public string imageUrl;
-        public string imageUrlSmall;
+        // Card state
+        protected bool isActive = false;
+        protected bool isFaceUp = true;
         
-        // Card prices (for shop system)
-        public float marketPrice;
-        public float tcgPlayerPrice;
+        public string CardName => cardName;
+        public string Description => description;
+        public Sprite CardImage => cardImage;
+        public CardRarity Rarity => rarity;
+        public CardType CardType => cardType;
+        public int Level => level;
+        public int Attack => attack;
+        public int Defense => defense;
+        public bool IsActive => isActive;
+        public bool IsFaceUp => isFaceUp;
         
-        // Gameplay properties
-        public bool isPlayable;
-        public float cooldown;
-        public float range;
-        public float attackSpeed;
-        public List<string> effects;
-        
-        [Serializable]
-        public class CardSet
+        public virtual void OnCardActivated()
         {
-            public string setName;
-            public string setCode;
-            public string setRarity;
-            public string setPrice;
-        }
-        
-        public YuGiOhCard()
-        {
-            cardSets = new List<CardSet>();
-            effects = new List<string>();
-        }
-        
-        public void SetDefaultStats()
-        {
-            // Set default gameplay stats based on card type
-            switch (type.ToLower())
+            isActive = true;
+            foreach (var effect in effects)
             {
-                case "normal monster":
-                    attack = 1500;
-                    defense = 1000;
-                    level = 4;
-                    cost = 2;
-                    range = 3f;
-                    attackSpeed = 1f;
-                    break;
-                    
-                case "effect monster":
-                    attack = 1800;
-                    defense = 1200;
-                    level = 4;
-                    cost = 3;
-                    range = 3.5f;
-                    attackSpeed = 1.2f;
-                    break;
-                    
-                case "ritual monster":
-                    attack = 2500;
-                    defense = 2000;
-                    level = 6;
-                    cost = 5;
-                    range = 4f;
-                    attackSpeed = 0.8f;
-                    break;
-                    
-                case "fusion monster":
-                    attack = 2800;
-                    defense = 2200;
-                    level = 7;
-                    cost = 6;
-                    range = 4.5f;
-                    attackSpeed = 0.7f;
-                    break;
-                    
-                case "synchro monster":
-                    attack = 3000;
-                    defense = 2500;
-                    level = 8;
-                    cost = 7;
-                    range = 5f;
-                    attackSpeed = 0.6f;
-                    break;
-                    
-                case "xyz monster":
-                    attack = 3200;
-                    defense = 2700;
-                    level = 9;
-                    cost = 8;
-                    range = 5.5f;
-                    attackSpeed = 0.5f;
-                    break;
-                    
-                case "link monster":
-                    attack = 3500;
-                    defense = 3000;
-                    level = 10;
-                    cost = 9;
-                    range = 6f;
-                    attackSpeed = 0.4f;
-                    break;
-                    
-                case "spell card":
-                    attack = 0;
-                    defense = 0;
-                    level = 0;
-                    cost = 1;
-                    range = 0f;
-                    attackSpeed = 0f;
-                    break;
-                    
-                case "trap card":
-                    attack = 0;
-                    defense = 0;
-                    level = 0;
-                    cost = 1;
-                    range = 0f;
-                    attackSpeed = 0f;
-                    break;
-            }
-            
-            // Set default cooldown based on card type and level
-            cooldown = 5f + (level * 0.5f);
-            
-            // Set default rarity if not set
-            if (string.IsNullOrEmpty(rarity))
-            {
-                rarity = "Common";
+                effect.OnCardActivated(this);
             }
         }
         
-        public float GetPower()
+        public virtual void OnCardDeactivated()
         {
-            // Calculate card power based on stats and rarity
-            float basePower = (attack + defense) * 0.5f;
-            float rarityMultiplier = GetRarityMultiplier();
-            float levelMultiplier = 1f + (level * 0.1f);
-            
-            return basePower * rarityMultiplier * levelMultiplier;
-        }
-        
-        private float GetRarityMultiplier()
-        {
-            switch (rarity.ToLower())
+            isActive = false;
+            foreach (var effect in effects)
             {
-                case "common":
-                    return 1.0f;
-                case "rare":
-                    return 1.2f;
-                case "super rare":
-                    return 1.5f;
-                case "ultra rare":
-                    return 1.8f;
-                case "secret rare":
-                    return 2.0f;
-                default:
-                    return 1.0f;
+                effect.OnCardDeactivated(this);
             }
         }
         
-        public bool IsMonster()
+        public virtual void FlipCard()
         {
-            return type.ToLower().Contains("monster");
+            isFaceUp = !isFaceUp;
+            foreach (var effect in effects)
+            {
+                effect.OnCardFlipped(this);
+            }
         }
         
-        public bool IsSpell()
+        public virtual void AddEffect(CardEffect effect)
         {
-            return type.ToLower().Contains("spell");
+            effects.Add(effect);
         }
         
-        public bool IsTrap()
+        public virtual void RemoveEffect(CardEffect effect)
         {
-            return type.ToLower().Contains("trap");
+            effects.Remove(effect);
         }
     }
 } 

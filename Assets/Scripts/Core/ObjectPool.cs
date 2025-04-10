@@ -1,97 +1,85 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Utils
 {
-    public class ObjectPool
+    public class ObjectPool : MonoBehaviour
     {
         private GameObject prefab;
         private Transform poolContainer;
-        private List<GameObject> activeObjects = new List<GameObject>();
-        private Queue<GameObject> inactiveObjects = new Queue<GameObject>();
-        private int poolSize;
+        private Queue<GameObject> pool = new Queue<GameObject>();
+        private int initialSize = 10;
+        private bool expandable = true;
         
-        public ObjectPool(GameObject prefab, int poolSize)
+        public void Initialize(GameObject prefab, int initialSize = 10, bool expandable = true)
         {
             this.prefab = prefab;
-            this.poolSize = poolSize;
+            this.initialSize = initialSize;
+            this.expandable = expandable;
             
-            // Create a container for pooled objects
+            // Create pool container
             poolContainer = new GameObject($"Pool_{prefab.name}").transform;
-            poolContainer.SetParent(GameObject.Find("ObjectPools")?.transform);
+            poolContainer.SetParent(transform);
             
             // Pre-instantiate objects
-            for (int i = 0; i < poolSize; i++)
+            for (int i = 0; i < initialSize; i++)
             {
-                CreateNewObject();
+                CreateNewInstance();
             }
         }
         
-        private void CreateNewObject()
+        private GameObject CreateNewInstance()
         {
-            GameObject obj = GameObject.Instantiate(prefab, poolContainer);
+            GameObject obj = Instantiate(prefab, poolContainer);
             obj.SetActive(false);
-            inactiveObjects.Enqueue(obj);
-        }
-        
-        public GameObject GetObject()
-        {
-            GameObject obj;
-            
-            if (inactiveObjects.Count > 0)
-            {
-                obj = inactiveObjects.Dequeue();
-            }
-            else
-            {
-                // If we run out of objects, create a new one
-                CreateNewObject();
-                obj = inactiveObjects.Dequeue();
-            }
-            
-            obj.SetActive(true);
-            activeObjects.Add(obj);
-            
+            pool.Enqueue(obj);
             return obj;
         }
         
-        public void ReturnObject(GameObject obj)
+        public GameObject Get()
         {
-            if (obj == null)
+            if (pool.Count == 0)
             {
-                return;
+                if (expandable)
+                {
+                    return CreateNewInstance();
+                }
+                else
+                {
+                    Debug.LogWarning($"Object pool for {prefab.name} is empty and not expandable!");
+                    return null;
+                }
             }
+            
+            GameObject obj = pool.Dequeue();
+            obj.SetActive(true);
+            return obj;
+        }
+        
+        public void Return(GameObject obj)
+        {
+            if (obj == null) return;
             
             obj.SetActive(false);
             obj.transform.SetParent(poolContainer);
-            
-            if (activeObjects.Contains(obj))
+            pool.Enqueue(obj);
+        }
+        
+        public void Clear()
+        {
+            while (pool.Count > 0)
             {
-                activeObjects.Remove(obj);
+                GameObject obj = pool.Dequeue();
+                if (obj != null)
+                {
+                    Destroy(obj);
+                }
             }
             
-            if (!inactiveObjects.Contains(obj))
+            if (poolContainer != null)
             {
-                inactiveObjects.Enqueue(obj);
+                Destroy(poolContainer.gameObject);
             }
-        }
-        
-        public void ReturnAllObjects()
-        {
-            foreach (GameObject obj in activeObjects.ToArray())
-            {
-                ReturnObject(obj);
-            }
-        }
-        
-        public int GetActiveObjectCount()
-        {
-            return activeObjects.Count;
-        }
-        
-        public int GetInactiveObjectCount()
-        {
-            return inactiveObjects.Count;
         }
     }
 } 

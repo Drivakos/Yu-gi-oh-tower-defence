@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using YuGiOhTowerDefense.Core;
 using YuGiOhTowerDefense.UI;
+using YuGiOhTowerDefense.Cards;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Managers
 {
     [System.Serializable]
     public class CardPack

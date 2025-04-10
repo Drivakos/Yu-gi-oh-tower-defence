@@ -1,18 +1,43 @@
 using UnityEngine;
-using System.Collections;
-using YuGiOhTowerDefense.Core;
 using System.Collections.Generic;
+using YuGiOhTowerDefense.Base;
+using YuGiOhTowerDefense.Utils;
+using YuGiOhTowerDefense.Cards;
+using YuGiOhTowerDefense.StateMachine;
+using YuGiOhTowerDefense.Effects;
 
-namespace YuGiOhTowerDefense.Core
+namespace YuGiOhTowerDefense.Cards
 {
+    public interface IMonsterCardData
+    {
+        int Attack { get; }
+        int Defense { get; }
+        float Range { get; }
+        float AttackSpeed { get; }
+        string Name { get; }
+        string Description { get; }
+        CardType Type { get; }
+        CardRarity Rarity { get; }
+    }
+
     public class MonsterCard : MonoBehaviour
     {
+        private const float MIN_ATTACK_RANGE = 1f;
+        private const float MAX_ATTACK_RANGE = 10f;
+        private const float MIN_ATTACK_SPEED = 0.5f;
+        private const float MAX_ATTACK_SPEED = 5f;
+        private const float MIN_MOVE_SPEED = 1f;
+        private const float MAX_MOVE_SPEED = 10f;
+
         [Header("Monster Settings")]
         [SerializeField] private float attackRange = 5f;
         [SerializeField] private float attackCooldown = 1f;
         [SerializeField] private float moveSpeed = 3f;
         [SerializeField] private float rotationSpeed = 5f;
         [SerializeField] private LayerMask enemyLayer;
+        [SerializeField] private float enemySearchInterval = 0.5f;
+        [SerializeField] private float attackModifier = 1f;
+        [SerializeField] private float defenseModifier = 1f;
         
         [Header("Visual Settings")]
         [SerializeField] private Transform modelTransform;
@@ -27,23 +52,51 @@ namespace YuGiOhTowerDefense.Core
         [SerializeField] private GameObject deathEffectPrefab;
         [SerializeField] private int poolSize = 5;
         
-        private YuGiOhCard cardData;
-        private int currentHealth;
+        private IMonsterCardData cardData;
+        private float currentHealth;
+        private float currentCooldown;
         private float attackTimer;
         private Transform target;
         private AudioSource audioSource;
         private Animator animator;
         private ObjectPool attackEffectPool;
         private ObjectPool deathEffectPool;
+        private float lastEnemySearchTime;
+        private Vector3 lastPosition;
+        private float distanceMoved;
+        private bool isInitialized;
+        private CardManager cardManager;
+        private SpatialPartition spatialPartition;
+        private MonsterStateMachine stateMachine;
+        private List<StatusEffect> activeEffects = new List<StatusEffect>();
         
-        private MonsterState currentState;
-        private Dictionary<MonsterState, IMonsterState> states;
+        public event System.Action<MonsterCard> OnDeath;
+        public event System.Action<MonsterCard, float> OnDamageTaken;
+        public event System.Action<MonsterCard, Transform> OnTargetChanged;
+        public event System.Action<MonsterCard, StatusEffect> OnEffectApplied;
+        public event System.Action<MonsterCard, StatusEffect> OnEffectRemoved;
+        
+        public IMonsterCardData CardData => cardData;
+        public float CurrentHealth => currentHealth;
+        public float MaxHealth => cardData?.Attack ?? 0;
+        public float AttackModifier => attackModifier;
+        public float DefenseModifier => defenseModifier;
+        public float MoveSpeed => moveSpeed;
+        public bool IsAlive => currentHealth > 0;
+        public bool IsInitialized => isInitialized;
+        public Transform Target => target;
+        public float AttackRange => attackRange;
+        public float AttackTimer => attackTimer;
+        public Animator Animator => animator;
+        public ParticleSystem IdleParticles => idleParticles;
         
         private void Awake()
         {
             InitializeComponents();
             InitializeStateMachine();
             InitializeObjectPools();
+            InitializeSpatialPartition();
+            lastPosition = transform.position;
         }
         
         private void InitializeComponents()
@@ -55,84 +108,182 @@ namespace YuGiOhTowerDefense.Core
             }
             
             animator = GetComponent<Animator>();
+            cardManager = FindObjectOfType<CardManager>();
+            
+            if (modelTransform == null)
+            {
+                modelTransform = transform;
+            }
         }
         
         private void InitializeStateMachine()
         {
-            states = new Dictionary<MonsterState, IMonsterState>
-            {
-                { MonsterState.Idle, new MonsterIdleState(this) },
-                { MonsterState.Moving, new MonsterMovingState(this) },
-                { MonsterState.Attacking, new MonsterAttackingState(this) },
-                { MonsterState.Dead, new MonsterDeadState(this) }
-            };
-            
-            SetState(MonsterState.Idle);
+            stateMachine = new MonsterStateMachine(this);
         }
         
         private void InitializeObjectPools()
         {
             if (attackEffectPrefab != null)
             {
-                attackEffectPool = new ObjectPool(attackEffectPrefab, poolSize);
+                attackEffectPool = gameObject.AddComponent<ObjectPool>();
+                attackEffectPool.Initialize(attackEffectPrefab, poolSize);
             }
             
             if (deathEffectPrefab != null)
             {
-                deathEffectPool = new ObjectPool(deathEffectPrefab, poolSize);
+                deathEffectPool = gameObject.AddComponent<ObjectPool>();
+                deathEffectPool.Initialize(deathEffectPrefab, poolSize);
             }
         }
         
-        public void Initialize(YuGiOhCard card)
+        private void InitializeSpatialPartition()
         {
-            cardData = card;
-            currentHealth = card.defense;
-            attackRange = card.range;
-            attackCooldown = 1f / card.attackSpeed;
+            spatialPartition = new SpatialPartition(attackRange, enemyLayer);
+        }
+        
+        public void Initialize(IMonsterCardData card)
+        {
+            if (isInitialized)
+            {
+                Debug.LogWarning("MonsterCard already initialized!");
+                return;
+            }
             
+            cardData = card;
+            currentHealth = Mathf.RoundToInt(card.Defense * defenseModifier);
+            attackRange = Mathf.Clamp(card.Range, MIN_ATTACK_RANGE, MAX_ATTACK_RANGE);
+            attackCooldown = Mathf.Clamp(1f / card.AttackSpeed, MIN_ATTACK_SPEED, MAX_ATTACK_SPEED);
+            moveSpeed = Mathf.Clamp(moveSpeed, MIN_MOVE_SPEED, MAX_MOVE_SPEED);
+            
+            isInitialized = true;
             SetState(MonsterState.Idle);
         }
         
         private void Update()
         {
-            if (cardData == null || currentState == null)
+            if (!isInitialized)
             {
                 return;
             }
             
-            currentState.Update();
+            UpdateEffects();
+            UpdateMovement();
+            stateMachine.Update();
+            
+            if (attackTimer > 0)
+            {
+                attackTimer -= Time.deltaTime;
+            }
+        }
+        
+        private void UpdateEffects()
+        {
+            for (int i = activeEffects.Count - 1; i >= 0; i--)
+            {
+                StatusEffect effect = activeEffects[i];
+                effect.Update(Time.deltaTime);
+                
+                if (effect.IsExpired)
+                {
+                    RemoveEffect(effect);
+                }
+                else
+                {
+                    switch (effect.Type)
+                    {
+                        case StatusEffectType.Poison:
+                        case StatusEffectType.Burn:
+                            TakeDamage(((effect as PoisonEffect)?.damagePerSecond ?? 0) * Time.deltaTime);
+                            break;
+                        case StatusEffectType.Heal:
+                            Heal(((effect as HealEffect)?.healPerSecond ?? 0) * Time.deltaTime);
+                            break;
+                    }
+                }
+            }
+        }
+        
+        private void UpdateMovement()
+        {
+            Vector3 currentPosition = transform.position;
+            distanceMoved = Vector3.Distance(lastPosition, currentPosition);
+            lastPosition = currentPosition;
+            
+            if (spatialPartition != null)
+            {
+                spatialPartition.UpdateObject(transform, lastPosition);
+            }
+        }
+        
+        public void ApplyEffect(StatusEffect effect)
+        {
+            if (effect == null)
+            {
+                return;
+            }
+            
+            activeEffects.Add(effect);
+            effect.Apply(this);
+            OnEffectApplied?.Invoke(this, effect);
+        }
+        
+        public void RemoveEffect(StatusEffect effect)
+        {
+            if (effect == null)
+            {
+                return;
+            }
+            
+            if (activeEffects.Remove(effect))
+            {
+                effect.Remove(this);
+                OnEffectRemoved?.Invoke(this, effect);
+            }
         }
         
         public void SetState(MonsterState newState)
         {
-            if (currentState != null)
-            {
-                currentState.Exit();
-            }
-            
-            currentState = states[newState];
-            currentState.Enter();
+            stateMachine.SetState(newState);
         }
         
         public void FindNearestEnemy()
         {
-            Collider[] colliders = Physics.OverlapSphere(transform.position, attackRange * 2f, enemyLayer);
-            
-            Transform nearestEnemy = null;
-            float nearestDistance = float.MaxValue;
-            
-            foreach (Collider collider in colliders)
+            if (Time.time - lastEnemySearchTime < enemySearchInterval)
             {
-                float distance = Vector3.Distance(transform.position, collider.transform.position);
-                
-                if (distance < nearestDistance)
-                {
-                    nearestDistance = distance;
-                    nearestEnemy = collider.transform;
-                }
+                return;
             }
             
-            target = nearestEnemy;
+            lastEnemySearchTime = Time.time;
+            
+            if (spatialPartition != null)
+            {
+                target = spatialPartition.FindNearest(transform.position, attackRange);
+            }
+            else
+            {
+                Collider[] colliders = Physics.OverlapSphere(transform.position, attackRange, enemyLayer);
+                
+                Transform nearestEnemy = null;
+                float nearestDistance = float.MaxValue;
+                
+                foreach (Collider collider in colliders)
+                {
+                    float distance = Vector3.Distance(transform.position, collider.transform.position);
+                    
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestEnemy = collider.transform;
+                    }
+                }
+                
+                target = nearestEnemy;
+            }
+            
+            if (target != null)
+            {
+                OnTargetChanged?.Invoke(this, target);
+            }
         }
         
         public void MoveTowardsTarget()
@@ -157,39 +308,59 @@ namespace YuGiOhTowerDefense.Core
             }
             
             attackTimer = attackCooldown;
+            PlayAttackAnimation();
+            PlayAttackSound();
+            SpawnAttackEffect();
             
+            Enemy enemy = target.GetComponent<Enemy>();
+            if (enemy != null)
+            {
+                int damage = Mathf.RoundToInt(cardData.Attack * attackModifier);
+                enemy.TakeDamage(damage);
+            }
+        }
+        
+        private void PlayAttackAnimation()
+        {
             if (animator != null)
             {
                 animator.SetTrigger("Attack");
             }
-            
+        }
+        
+        private void PlayAttackSound()
+        {
             if (attackSound != null && audioSource != null)
             {
                 audioSource.PlayOneShot(attackSound);
             }
-            
+        }
+        
+        private void SpawnAttackEffect()
+        {
             if (attackEffectPool != null)
             {
-                GameObject effect = attackEffectPool.GetObject();
-                effect.transform.position = target.position;
-                effect.transform.rotation = Quaternion.identity;
+                GameObject effect = attackEffectPool.Get();
+                if (effect != null)
+                {
+                    effect.transform.position = target.position;
+                    effect.transform.rotation = Quaternion.identity;
+                }
             }
             
             if (attackParticles != null)
             {
                 attackParticles.Play();
             }
-            
-            Enemy enemy = target.GetComponent<Enemy>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(cardData.attack);
-            }
         }
         
-        public void TakeDamage(int damage)
+        public void TakeDamage(float damage)
         {
-            currentHealth -= damage;
+            if (!IsAlive) return;
+
+            float actualDamage = damage / defenseModifier;
+            currentHealth = Mathf.Max(0, currentHealth - actualDamage);
+            OnDamageTaken?.Invoke(this, actualDamage);
             
             if (animator != null)
             {
@@ -200,6 +371,13 @@ namespace YuGiOhTowerDefense.Core
             {
                 SetState(MonsterState.Dead);
             }
+        }
+        
+        public void Heal(float amount)
+        {
+            if (!IsAlive) return;
+
+            currentHealth = Mathf.Min(MaxHealth, currentHealth + amount);
         }
         
         private void Die()
@@ -216,12 +394,16 @@ namespace YuGiOhTowerDefense.Core
             
             if (deathEffectPool != null)
             {
-                GameObject effect = deathEffectPool.GetObject();
-                effect.transform.position = transform.position;
-                effect.transform.rotation = Quaternion.identity;
+                GameObject effect = deathEffectPool.Get();
+                if (effect != null)
+                {
+                    effect.transform.position = transform.position;
+                    effect.transform.rotation = Quaternion.identity;
+                }
             }
             
-            CardManager cardManager = FindObjectOfType<CardManager>();
+            OnDeath?.Invoke(this);
+            
             if (cardManager != null)
             {
                 cardManager.RemoveCard(cardData);
@@ -235,174 +417,35 @@ namespace YuGiOhTowerDefense.Core
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(transform.position, attackRange);
         }
-        
-        // State interface and implementations
-        private interface IMonsterState
+
+        public float GetCooldown()
         {
-            void Enter();
-            void Update();
-            void Exit();
+            return attackCooldown;
         }
-        
-        private class MonsterIdleState : IMonsterState
+
+        public void SetCooldown(float cooldown)
         {
-            private readonly MonsterCard monster;
-            
-            public MonsterIdleState(MonsterCard monster)
-            {
-                this.monster = monster;
-            }
-            
-            public void Enter()
-            {
-                if (monster.animator != null)
-                {
-                    monster.animator.SetBool("IsMoving", false);
-                }
-                
-                if (monster.idleParticles != null)
-                {
-                    monster.idleParticles.Play();
-                }
-            }
-            
-            public void Update()
-            {
-                monster.FindNearestEnemy();
-                
-                if (monster.target != null)
-                {
-                    float distance = Vector3.Distance(monster.transform.position, monster.target.position);
-                    
-                    if (distance <= monster.attackRange && monster.attackTimer <= 0)
-                    {
-                        monster.SetState(MonsterState.Attacking);
-                    }
-                    else if (distance > monster.attackRange)
-                    {
-                        monster.SetState(MonsterState.Moving);
-                    }
-                }
-            }
-            
-            public void Exit()
-            {
-                if (monster.idleParticles != null)
-                {
-                    monster.idleParticles.Stop();
-                }
-            }
+            attackCooldown = cooldown;
         }
-        
-        private class MonsterMovingState : IMonsterState
+
+        public float GetRange()
         {
-            private readonly MonsterCard monster;
-            
-            public MonsterMovingState(MonsterCard monster)
-            {
-                this.monster = monster;
-            }
-            
-            public void Enter()
-            {
-                if (monster.animator != null)
-                {
-                    monster.animator.SetBool("IsMoving", true);
-                }
-            }
-            
-            public void Update()
-            {
-                if (monster.target == null)
-                {
-                    monster.SetState(MonsterState.Idle);
-                    return;
-                }
-                
-                float distance = Vector3.Distance(monster.transform.position, monster.target.position);
-                
-                if (distance <= monster.attackRange && monster.attackTimer <= 0)
-                {
-                    monster.SetState(MonsterState.Attacking);
-                }
-                else if (distance > monster.attackRange)
-                {
-                    monster.MoveTowardsTarget();
-                }
-            }
-            
-            public void Exit()
-            {
-                if (monster.animator != null)
-                {
-                    monster.animator.SetBool("IsMoving", false);
-                }
-            }
+            return attackRange;
         }
-        
-        private class MonsterAttackingState : IMonsterState
+
+        public void SetRange(float range)
         {
-            private readonly MonsterCard monster;
-            
-            public MonsterAttackingState(MonsterCard monster)
-            {
-                this.monster = monster;
-            }
-            
-            public void Enter()
-            {
-                monster.AttackTarget();
-            }
-            
-            public void Update()
-            {
-                if (monster.target == null)
-                {
-                    monster.SetState(MonsterState.Idle);
-                    return;
-                }
-                
-                float distance = Vector3.Distance(monster.transform.position, monster.target.position);
-                
-                if (distance > monster.attackRange)
-                {
-                    monster.SetState(MonsterState.Moving);
-                }
-                else if (monster.attackTimer <= 0)
-                {
-                    monster.AttackTarget();
-                }
-            }
-            
-            public void Exit()
-            {
-                // Nothing to do here
-            }
+            attackRange = Mathf.Clamp(range, MIN_ATTACK_RANGE, MAX_ATTACK_RANGE);
         }
-        
-        private class MonsterDeadState : IMonsterState
+
+        public float GetAttackSpeed()
         {
-            private readonly MonsterCard monster;
-            
-            public MonsterDeadState(MonsterCard monster)
-            {
-                this.monster = monster;
-            }
-            
-            public void Enter()
-            {
-                monster.Die();
-            }
-            
-            public void Update()
-            {
-                // Nothing to do here
-            }
-            
-            public void Exit()
-            {
-                // Nothing to do here
-            }
+            return 1f / attackCooldown;
+        }
+
+        public void SetAttackSpeed(float attackSpeed)
+        {
+            attackCooldown = 1f / Mathf.Clamp(attackSpeed, MIN_ATTACK_SPEED, MAX_ATTACK_SPEED);
         }
     }
     
@@ -414,48 +457,13 @@ namespace YuGiOhTowerDefense.Core
         Dead
     }
     
-    public class ObjectPool
+    public abstract class StatusEffect
     {
-        private readonly GameObject prefab;
-        private readonly Queue<GameObject> pool;
-        private readonly int maxSize;
+        public float Duration { get; protected set; }
+        public bool IsExpired => Duration <= 0;
         
-        public ObjectPool(GameObject prefab, int maxSize)
-        {
-            this.prefab = prefab;
-            this.maxSize = maxSize;
-            this.pool = new Queue<GameObject>();
-            
-            for (int i = 0; i < maxSize; i++)
-            {
-                GameObject obj = GameObject.Instantiate(prefab);
-                obj.SetActive(false);
-                pool.Enqueue(obj);
-            }
-        }
-        
-        public GameObject GetObject()
-        {
-            if (pool.Count == 0)
-            {
-                return null;
-            }
-            
-            GameObject obj = pool.Dequeue();
-            obj.SetActive(true);
-            return obj;
-        }
-        
-        public void ReturnObject(GameObject obj)
-        {
-            if (pool.Count >= maxSize)
-            {
-                GameObject.Destroy(obj);
-                return;
-            }
-            
-            obj.SetActive(false);
-            pool.Enqueue(obj);
-        }
+        public virtual void Apply(MonsterCard monster) { }
+        public virtual void Update(float deltaTime) { Duration -= deltaTime; }
+        public virtual void Remove(MonsterCard monster) { }
     }
 } 

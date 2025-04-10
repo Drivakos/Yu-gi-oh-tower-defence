@@ -12,15 +12,36 @@ namespace YuGiOh.Managers
         [SerializeField] private int currentWave = 0;
         [SerializeField] private float timeBetweenWaves = 30f;
         [SerializeField] private float spawnInterval = 2f;
+        [SerializeField] private float waveStartDelay = 5f;
+        [SerializeField] private float waveEndDelay = 3f;
         
         [Header("Enemy Settings")]
         [SerializeField] private List<MonsterCard> enemyPrefabs;
         [SerializeField] private Transform spawnPoint;
         [SerializeField] private Transform objectivePoint;
+        [SerializeField] private AnimationCurve enemyHealthCurve = AnimationCurve.Linear(0, 1, 100, 5);
+        [SerializeField] private AnimationCurve enemySpeedCurve = AnimationCurve.Linear(0, 1, 100, 2);
+        [SerializeField] private AnimationCurve enemyCountCurve = AnimationCurve.Linear(0, 1, 100, 3);
         
         private bool isWaveActive = false;
         private int enemiesRemaining = 0;
         private int enemiesSpawned = 0;
+        private GameManager gameManager;
+        
+        public event System.Action<int> OnWaveStarted;
+        public event System.Action<int> OnWaveCompleted;
+        public event System.Action<int> OnEnemySpawned;
+        public event System.Action<int> OnEnemyDefeated;
+        
+        protected override void Awake()
+        {
+            base.Awake();
+            gameManager = FindObjectOfType<GameManager>();
+            if (gameManager == null)
+            {
+                Debug.LogError("WaveManager: GameManager not found!");
+            }
+        }
         
         private void Start()
         {
@@ -47,13 +68,13 @@ namespace YuGiOh.Managers
             enemiesRemaining = CalculateWaveSize();
             enemiesSpawned = 0;
             
+            OnWaveStarted?.Invoke(currentWave);
             StartCoroutine(SpawnEnemies());
         }
         
         private int CalculateWaveSize()
         {
-            // Basic wave size calculation - can be made more complex
-            return 5 + (currentWave * 2);
+            return Mathf.RoundToInt(enemyCountCurve.Evaluate(currentWave));
         }
         
         private IEnumerator SpawnEnemies()
@@ -79,9 +100,14 @@ namespace YuGiOh.Managers
             int randomIndex = Random.Range(0, enemyPrefabs.Count);
             MonsterCard enemyPrefab = enemyPrefabs[randomIndex];
             
+            // Calculate enemy stats based on wave number
+            float healthMultiplier = enemyHealthCurve.Evaluate(currentWave);
+            float speedMultiplier = enemySpeedCurve.Evaluate(currentWave);
+            
             // Spawn the enemy
             MonsterCard enemy = Instantiate(enemyPrefab, spawnPoint.position, Quaternion.identity);
             enemy.SetAsEnemy(true);
+            enemy.ModifyStats(healthMultiplier, speedMultiplier);
             
             // Set objective if available
             if (objectivePoint != null)
@@ -92,17 +118,32 @@ namespace YuGiOh.Managers
                     pathFollower.SetObjective(objectivePoint);
                 }
             }
+            
+            OnEnemySpawned?.Invoke(enemiesRemaining);
         }
         
         public void OnEnemyDefeated()
         {
             enemiesRemaining--;
+            OnEnemyDefeated?.Invoke(enemiesRemaining);
             
             if (enemiesRemaining <= 0)
             {
                 isWaveActive = false;
-                // Wave completed logic here
+                OnWaveCompleted?.Invoke(currentWave);
+                
+                // Award DP for completing the wave
+                int waveReward = CalculateWaveReward();
+                if (gameManager != null)
+                {
+                    gameManager.AddDP(waveReward);
+                }
             }
+        }
+        
+        private int CalculateWaveReward()
+        {
+            return 100 + (currentWave * 50);
         }
         
         public int GetCurrentWave()
@@ -118,6 +159,35 @@ namespace YuGiOh.Managers
         public int GetEnemiesRemaining()
         {
             return enemiesRemaining;
+        }
+        
+        // New methods for spawn and objective points
+        public void SetSpawnPoint(Transform point)
+        {
+            spawnPoint = point;
+        }
+        
+        public void SetObjectivePoint(Transform point)
+        {
+            objectivePoint = point;
+        }
+        
+        public void SetGameManager(GameManager manager)
+        {
+            gameManager = manager;
+        }
+        
+        public void AddEnemyPrefab(MonsterCard prefab)
+        {
+            if (!enemyPrefabs.Contains(prefab))
+            {
+                enemyPrefabs.Add(prefab);
+            }
+        }
+        
+        public void ClearEnemyPrefabs()
+        {
+            enemyPrefabs.Clear();
         }
     }
 } 
