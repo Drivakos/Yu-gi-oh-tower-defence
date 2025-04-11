@@ -335,11 +335,169 @@ namespace YuGiOhTowerDefense.Core
         
         private void HandleCardEffect(YuGiOhCard card)
         {
-            // TODO: Implement card effect handling
-            // This will depend on the specific card type and effect
-            
-            // For now, just send the card to graveyard
-            SendCardToGraveyard(card);
+            if (card == null) return;
+
+            switch (card.CardType)
+            {
+                case CardType.Monster:
+                    HandleMonsterCardEffect(card);
+                    break;
+                case CardType.Spell:
+                    HandleSpellCardEffect(card);
+                    break;
+                case CardType.Trap:
+                    HandleTrapCardEffect(card);
+                    break;
+                default:
+                    Debug.LogWarning($"Unknown card type: {card.CardType}");
+                    break;
+            }
+        }
+        
+        private void HandleMonsterCardEffect(YuGiOhCard card)
+        {
+            // Summon monster to the field
+            MonsterCard monsterCard = card as MonsterCard;
+            if (monsterCard != null)
+            {
+                // Check if we have space on the field
+                if (activeMonsters.Count >= maxMonstersOnField)
+                {
+                    Debug.Log("Cannot summon more monsters - field is full!");
+                    return;
+                }
+
+                // Create monster instance
+                GameObject monsterInstance = Instantiate(monsterCard.Prefab, monsterContainer);
+                Monster monster = monsterInstance.GetComponent<Monster>();
+                if (monster != null)
+                {
+                    monster.Initialize(monsterCard);
+                    RegisterMonster(monster);
+                }
+            }
+        }
+        
+        private void HandleSpellCardEffect(YuGiOhCard card)
+        {
+            SpellCard spellCard = card as SpellCard;
+            if (spellCard != null)
+            {
+                switch (spellCard.SpellType)
+                {
+                    case SpellType.Normal:
+                        // Apply immediate effect
+                        ApplySpellEffect(spellCard);
+                        SendCardToGraveyard(card);
+                        break;
+                    case SpellType.Continuous:
+                        // Add to active spells
+                        activeSpells.Add(spellCard);
+                        break;
+                    case SpellType.QuickPlay:
+                        // Can be activated during opponent's turn
+                        ApplySpellEffect(spellCard);
+                        SendCardToGraveyard(card);
+                        break;
+                    case SpellType.Field:
+                        // Replace current field spell
+                        if (currentFieldSpell != null)
+                        {
+                            SendCardToGraveyard(currentFieldSpell);
+                        }
+                        currentFieldSpell = spellCard;
+                        break;
+                    case SpellType.Equip:
+                        // Attach to target monster
+                        // TODO: Implement equip spell targeting
+                        break;
+                    case SpellType.Ritual:
+                        // Special summon ritual monster
+                        // TODO: Implement ritual summoning
+                        break;
+                }
+            }
+        }
+        
+        private void HandleTrapCardEffect(YuGiOhCard card)
+        {
+            TrapCard trapCard = card as TrapCard;
+            if (trapCard != null)
+            {
+                switch (trapCard.TrapType)
+                {
+                    case TrapType.Normal:
+                        // Apply immediate effect
+                        ApplyTrapEffect(trapCard);
+                        SendCardToGraveyard(card);
+                        break;
+                    case TrapType.Continuous:
+                        // Add to active traps
+                        activeTraps.Add(trapCard);
+                        break;
+                    case TrapType.Counter:
+                        // Can be activated in response to opponent's action
+                        ApplyTrapEffect(trapCard);
+                        SendCardToGraveyard(card);
+                        break;
+                }
+            }
+        }
+        
+        private void ApplySpellEffect(SpellCard spellCard)
+        {
+            // Apply spell effect based on spell icon
+            switch (spellCard.SpellIcon)
+            {
+                case SpellIcon.Destroy:
+                    // Destroy target monster(s)
+                    // TODO: Implement monster targeting
+                    break;
+                case SpellIcon.Increase:
+                    // Increase monster stats
+                    // TODO: Implement stat modification
+                    break;
+                case SpellIcon.Decrease:
+                    // Decrease monster stats
+                    // TODO: Implement stat modification
+                    break;
+                case SpellIcon.SpecialSummon:
+                    // Special summon monster from hand/deck
+                    // TODO: Implement special summoning
+                    break;
+                case SpellIcon.Draw:
+                    // Draw cards
+                    for (int i = 0; i < spellCard.EffectValue; i++)
+                    {
+                        DrawCard();
+                    }
+                    break;
+                case SpellIcon.LifePoints:
+                    // Modify life points
+                    currentLifePoints = Mathf.Max(0, currentLifePoints + (int)spellCard.EffectValue);
+                    OnLifePointsChanged?.Invoke(currentLifePoints);
+                    break;
+            }
+        }
+        
+        private void ApplyTrapEffect(TrapCard trapCard)
+        {
+            // Apply trap effect based on trap type
+            switch (trapCard.TrapType)
+            {
+                case TrapType.Normal:
+                    // Apply immediate effect
+                    // TODO: Implement trap effects
+                    break;
+                case TrapType.Continuous:
+                    // Apply continuous effect
+                    // TODO: Implement continuous trap effects
+                    break;
+                case TrapType.Counter:
+                    // Counter opponent's action
+                    // TODO: Implement counter trap effects
+                    break;
+            }
         }
         
         public void SendCardToGraveyard(YuGiOhCard card)

@@ -31,11 +31,15 @@ namespace YuGiOh.Gameplay
         public event System.Action<int> OnEnemySpawned;
         public event System.Action<int> OnEnemyDefeated;
         
+        private List<Transform> spawnPoints;
+        [SerializeField] private float spawnVariation = 2f;
+        
         private void Start()
         {
             gameManager = FindObjectOfType<GameManager>();
             currentWave = startingWave - 1;
             StartNextWave();
+            InitializeSpawnPoints();
         }
         
         public void StartNextWave()
@@ -107,8 +111,53 @@ namespace YuGiOh.Gameplay
         
         private Vector3 GetRandomSpawnPosition()
         {
-            // TODO: Implement proper spawn position logic based on game map
-            return new Vector3(Random.Range(-10f, 10f), 0, 20f);
+            if (spawnPoints == null || spawnPoints.Count == 0)
+            {
+                Debug.LogWarning("No spawn points defined in WaveManager!");
+                return Vector3.zero;
+            }
+            
+            // Get a random spawn point
+            Transform spawnPoint = spawnPoints[Random.Range(0, spawnPoints.Count)];
+            
+            // Add some random variation to the spawn position
+            Vector3 randomOffset = new Vector3(
+                Random.Range(-spawnVariation, spawnVariation),
+                0f,
+                Random.Range(-spawnVariation, spawnVariation)
+            );
+            
+            return spawnPoint.position + randomOffset;
+        }
+        
+        private void InitializeSpawnPoints()
+        {
+            spawnPoints = new List<Transform>();
+            
+            // Find all spawn point objects in the scene
+            GameObject[] spawnObjects = GameObject.FindGameObjectsWithTag("SpawnPoint");
+            foreach (GameObject spawnObject in spawnObjects)
+            {
+                spawnPoints.Add(spawnObject.transform);
+            }
+            
+            if (spawnPoints.Count == 0)
+            {
+                Debug.LogWarning("No spawn points found in the scene! Please add objects with the 'SpawnPoint' tag.");
+            }
+        }
+        
+        private void OnDrawGizmos()
+        {
+            if (spawnPoints != null)
+            {
+                Gizmos.color = Color.red;
+                foreach (Transform spawnPoint in spawnPoints)
+                {
+                    Gizmos.DrawWireSphere(spawnPoint.position, 1f);
+                    Gizmos.DrawWireSphere(spawnPoint.position, spawnVariation);
+                }
+            }
         }
         
         public void OnEnemyDefeated()

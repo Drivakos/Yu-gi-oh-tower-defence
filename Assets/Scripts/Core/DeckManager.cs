@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using YuGiOhTowerDefense.Cards;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace YuGiOhTowerDefense.Core
 {
@@ -66,385 +69,234 @@ namespace YuGiOhTowerDefense.Core
     
     public class DeckManager : MonoBehaviour
     {
-        [Header("Deck Settings")]
-        [SerializeField] private int maxDecks = 10;
-        [SerializeField] private int minDeckSize = 20;
-        [SerializeField] private int maxDeckSize = 60;
-        [SerializeField] private int maxCopiesPerCard = 3;
+        private static DeckManager instance;
+        public static DeckManager Instance => instance;
         
-        [Header("References")]
-        [SerializeField] private YuGiOhAPIManager apiManager;
-        [SerializeField] private PlayerCollection playerCollection;
+        [Header("Settings")]
+        [SerializeField] private string decksFolder = "Decks";
+        [SerializeField] private string defaultDeckName = "Default Deck";
         
-        private List<Deck> playerDecks = new List<Deck>();
-        private Deck activeDeck;
+        private string decksPath;
+        private List<DeckData> loadedDecks = new List<DeckData>();
         
-        // Events
-        public event Action<Deck> OnDeckCreated;
-        public event Action<Deck> OnDeckModified;
-        public event Action<Deck> OnDeckDeleted;
-        public event Action<Deck> OnActiveDeckChanged;
-        
-        public static DeckManager Instance { get; private set; }
-        
-        public Deck ActiveDeck => activeDeck;
-        public int MinDeckSize => minDeckSize;
-        public int MaxDeckSize => maxDeckSize;
+        public event Action<List<DeckData>> OnDecksLoaded;
+        public event Action<DeckData> OnDeckSaved;
+        public event Action<DeckData> OnDeckDeleted;
         
         private void Awake()
         {
-            // Singleton pattern
-            if (Instance == null)
+            if (instance == null)
             {
-                Instance = this;
+                instance = this;
                 DontDestroyOnLoad(gameObject);
+                Initialize();
             }
             else
             {
                 Destroy(gameObject);
+            }
+        }
+        
+        private void Initialize()
+        {
+            decksPath = Path.Combine(Application.persistentDataPath, decksFolder);
+            
+            if (!Directory.Exists(decksPath))
+            {
+                Directory.CreateDirectory(decksPath);
+            }
+            
+            LoadAllDecks();
+        }
+        
+        public void LoadAllDecks()
+        {
+            loadedDecks.Clear();
+            
+            try
+            {
+                string[] deckFiles = Directory.GetFiles(decksPath, "*.json");
+                
+                foreach (string file in deckFiles)
+                {
+                    string json = File.ReadAllText(file);
+                    DeckData deck = JsonConvert.DeserializeObject<DeckData>(json);
+                    
+                    if (deck != null)
+                    {
+                        loadedDecks.Add(deck);
+                    }
+                }
+                
+                OnDecksLoaded?.Invoke(loadedDecks);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error loading decks: {e.Message}");
+            }
+        }
+        
+        public void SaveDeck(DeckData deck)
+        {
+            if (deck == null)
+            {
+                Debug.LogError("Cannot save null deck");
                 return;
             }
             
-            if (apiManager == null)
+            try
             {
-                apiManager = FindObjectOfType<YuGiOhAPIManager>();
-                if (apiManager == null)
+                // Validate deck
+                if (!ValidateDeck(deck))
                 {
-                    Debug.LogError("YuGiOhAPIManager not found!");
-                }
-            }
-            
-            if (playerCollection == null)
-            {
-                playerCollection = PlayerCollection.Instance;
-                if (playerCollection == null)
-                {
-                    Debug.LogError("PlayerCollection not found!");
-                }
-            }
-            
-            LoadDecks();
-        }
-        
-        public Deck CreateDeck(string name, string description = "")
-        {
-            if (playerDecks.Count >= maxDecks)
-            {
-                Debug.LogWarning($"Maximum number of decks ({maxDecks}) reached. Delete a deck before creating a new one.");
-                return null;
-            }
-            
-            if (string.IsNullOrEmpty(name))
-            {
-                name = $"Deck {playerDecks.Count + 1}";
-            }
-            
-            Deck newDeck = new Deck(name, description);
-            playerDecks.Add(newDeck);
-            
-            SaveDecks();
-            OnDeckCreated?.Invoke(newDeck);
-            
-            // If this is the first deck, set it as active
-            if (playerDecks.Count == 1)
-            {
-                SetActiveDeck(newDeck);
-            }
-            
-            return newDeck;
-        }
-        
-        public bool RenameDeck(Deck deck, string newName)
-        {
-            if (deck == null || string.IsNullOrEmpty(newName))
-            {
-                return false;
-            }
-            
-            deck.name = newName;
-            deck.UpdateLastModified();
-            
-            SaveDecks();
-            OnDeckModified?.Invoke(deck);
-            
-            return true;
-        }
-        
-        public bool UpdateDeckDescription(Deck deck, string newDescription)
-        {
-            if (deck == null)
-            {
-                return false;
-            }
-            
-            deck.description = newDescription;
-            deck.UpdateLastModified();
-            
-            SaveDecks();
-            OnDeckModified?.Invoke(deck);
-            
-            return true;
-        }
-        
-        public bool DeleteDeck(Deck deck)
-        {
-            if (deck == null)
-            {
-                return false;
-            }
-            
-            bool wasActive = (deck == activeDeck);
-            
-            if (playerDecks.Remove(deck))
-            {
-                SaveDecks();
-                OnDeckDeleted?.Invoke(deck);
-                
-                // If the active deck was deleted, select a new one if available
-                if (wasActive)
-                {
-                    activeDeck = null;
-                    if (playerDecks.Count > 0)
-                    {
-                        SetActiveDeck(playerDecks[0]);
-                    }
-                    else
-                    {
-                        OnActiveDeckChanged?.Invoke(null);
-                    }
+                    Debug.LogError("Invalid deck data");
+                    return;
                 }
                 
-                return true;
-            }
-            
-            return false;
-        }
-        
-        public bool SetActiveDeck(Deck deck)
-        {
-            if (deck == null || !playerDecks.Contains(deck))
-            {
-                return false;
-            }
-            
-            if (activeDeck != deck)
-            {
-                activeDeck = deck;
-                OnActiveDeckChanged?.Invoke(activeDeck);
-            }
-            
-            return true;
-        }
-        
-        public bool AddCardToDeck(Deck deck, string cardId)
-        {
-            if (deck == null || string.IsNullOrEmpty(cardId))
-            {
-                return false;
-            }
-            
-            // Check if player owns the card
-            if (playerCollection != null && !playerCollection.HasCard(cardId))
-            {
-                Debug.LogWarning($"Cannot add card {cardId} to deck: Player does not own this card");
-                return false;
-            }
-            
-            // Check if the deck is already at maximum size
-            if (deck.cardIds.Count >= maxDeckSize)
-            {
-                Debug.LogWarning($"Cannot add card to deck: Deck already at maximum size ({maxDeckSize})");
-                return false;
-            }
-            
-            // Check if there are already the maximum number of copies of this card in the deck
-            int copiesInDeck = deck.cardIds.Count(id => id == cardId);
-            if (copiesInDeck >= maxCopiesPerCard)
-            {
-                Debug.LogWarning($"Cannot add more copies of card {cardId}: Maximum ({maxCopiesPerCard}) already in deck");
-                return false;
-            }
-            
-            // Add the card to the deck
-            deck.cardIds.Add(cardId);
-            deck.UpdateLastModified();
-            
-            SaveDecks();
-            OnDeckModified?.Invoke(deck);
-            
-            return true;
-        }
-        
-        public bool RemoveCardFromDeck(Deck deck, string cardId, bool removeAll = false)
-        {
-            if (deck == null || string.IsNullOrEmpty(cardId))
-            {
-                return false;
-            }
-            
-            if (removeAll)
-            {
-                int removedCount = deck.cardIds.RemoveAll(id => id == cardId);
-                if (removedCount > 0)
-                {
-                    deck.UpdateLastModified();
-                    SaveDecks();
-                    OnDeckModified?.Invoke(deck);
-                    return true;
-                }
-            }
-            else
-            {
-                int index = deck.cardIds.FindIndex(id => id == cardId);
-                if (index >= 0)
-                {
-                    deck.cardIds.RemoveAt(index);
-                    deck.UpdateLastModified();
-                    SaveDecks();
-                    OnDeckModified?.Invoke(deck);
-                    return true;
-                }
-            }
-            
-            return false;
-        }
-        
-        public bool IsDeckValid(Deck deck)
-        {
-            if (deck == null)
-            {
-                return false;
-            }
-            
-            // Check if deck meets minimum size requirement
-            if (deck.cardIds.Count < minDeckSize)
-            {
-                return false;
-            }
-            
-            // Check if all cards are owned by the player
-            if (playerCollection != null)
-            {
-                Dictionary<string, int> cardCounts = new Dictionary<string, int>();
+                // Generate unique filename
+                string filename = $"{deck.DeckName}_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+                string filePath = Path.Combine(decksPath, filename);
                 
-                foreach (string cardId in deck.cardIds)
+                // Serialize and save
+                string json = JsonConvert.SerializeObject(deck, Formatting.Indented);
+                File.WriteAllText(filePath, json);
+                
+                // Update loaded decks
+                int existingIndex = loadedDecks.FindIndex(d => d.DeckName == deck.DeckName);
+                if (existingIndex >= 0)
                 {
-                    if (!cardCounts.ContainsKey(cardId))
-                    {
-                        cardCounts[cardId] = 0;
-                    }
-                    
-                    cardCounts[cardId]++;
-                    
-                    // Check if player owns enough copies of this card
-                    if (cardCounts[cardId] > playerCollection.GetCardQuantity(cardId))
-                    {
-                        return false;
-                    }
+                    loadedDecks[existingIndex] = deck;
+                }
+                else
+                {
+                    loadedDecks.Add(deck);
+                }
+                
+                OnDeckSaved?.Invoke(deck);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error saving deck: {e.Message}");
+            }
+        }
+        
+        public void DeleteDeck(string deckName)
+        {
+            try
+            {
+                string[] files = Directory.GetFiles(decksPath, $"{deckName}_*.json");
+                
+                foreach (string file in files)
+                {
+                    File.Delete(file);
+                }
+                
+                DeckData deck = loadedDecks.FirstOrDefault(d => d.DeckName == deckName);
+                if (deck != null)
+                {
+                    loadedDecks.Remove(deck);
+                    OnDeckDeleted?.Invoke(deck);
                 }
             }
-            
-            return true;
-        }
-        
-        public List<Deck> GetAllDecks()
-        {
-            return new List<Deck>(playerDecks);
-        }
-        
-        public Deck GetDeckByName(string name)
-        {
-            return playerDecks.FirstOrDefault(deck => deck.name == name);
-        }
-        
-        private void SaveDecks()
-        {
-            DeckData data = new DeckData
+            catch (Exception e)
             {
-                decks = playerDecks,
-                activeDeckName = (activeDeck != null) ? activeDeck.name : ""
+                Debug.LogError($"Error deleting deck: {e.Message}");
+            }
+        }
+        
+        public DeckData GetDeck(string deckName)
+        {
+            return loadedDecks.FirstOrDefault(d => d.DeckName == deckName);
+        }
+        
+        public List<DeckData> GetAllDecks()
+        {
+            return new List<DeckData>(loadedDecks);
+        }
+        
+        public DeckData CreateDefaultDeck()
+        {
+            // TODO: Implement default deck creation with basic cards
+            return new DeckData
+            {
+                DeckName = defaultDeckName,
+                Cards = new List<CardData>()
             };
-            
-            string json = JsonUtility.ToJson(data);
-            PlayerPrefs.SetString("PlayerDecks", json);
-            PlayerPrefs.Save();
-            
-            Debug.Log($"Saved {playerDecks.Count} decks");
         }
         
-        private void LoadDecks()
+        private bool ValidateDeck(DeckData deck)
         {
-            playerDecks.Clear();
-            activeDeck = null;
-            
-            if (PlayerPrefs.HasKey("PlayerDecks"))
+            if (string.IsNullOrEmpty(deck.DeckName))
             {
-                string json = PlayerPrefs.GetString("PlayerDecks");
-                DeckData data = JsonUtility.FromJson<DeckData>(json);
-                
-                if (data != null && data.decks != null)
-                {
-                    playerDecks = data.decks;
-                    
-                    // Find active deck
-                    if (!string.IsNullOrEmpty(data.activeDeckName))
-                    {
-                        activeDeck = playerDecks.FirstOrDefault(deck => deck.name == data.activeDeckName);
-                    }
-                    
-                    Debug.Log($"Loaded {playerDecks.Count} decks");
-                }
+                Debug.LogError("Deck name cannot be empty");
+                return false;
             }
             
-            if (activeDeck == null && playerDecks.Count > 0)
+            if (deck.Cards == null)
             {
-                activeDeck = playerDecks[0];
+                Debug.LogError("Deck cards list cannot be null");
+                return false;
             }
             
-            // Clear cached card data
-            foreach (var deck in playerDecks)
+            // Check deck size
+            if (deck.Cards.Count < 40 || deck.Cards.Count > 60)
             {
-                deck.ClearCache();
+                Debug.LogError("Deck size must be between 40 and 60 cards");
+                return false;
             }
+            
+            // Check card copy limits
+            var cardCounts = deck.Cards.GroupBy(c => c.CardId)
+                                     .ToDictionary(g => g.Key, g => g.Count());
+            
+            if (cardCounts.Values.Any(count => count > 3))
+            {
+                Debug.LogError("Cannot have more than 3 copies of any card");
+                return false;
+            }
+            
+            return true;
         }
         
-        public Dictionary<string, int> GetDeckStats(Deck deck)
+        public bool IsDeckValid(DeckData deck)
         {
-            Dictionary<string, int> stats = new Dictionary<string, int>
-            {
-                { "Total Cards", deck.cardIds.Count },
-                { "Monster Cards", 0 },
-                { "Spell Cards", 0 },
-                { "Trap Cards", 0 }
-            };
-            
-            // Get full card data to analyze types
-            List<YuGiOhCard> cards = deck.GetCards(apiManager);
-            
-            foreach (var card in cards)
-            {
-                if (card.Type.Contains("Monster"))
-                {
-                    stats["Monster Cards"]++;
-                }
-                else if (card.Type.Contains("Spell"))
-                {
-                    stats["Spell Cards"]++;
-                }
-                else if (card.Type.Contains("Trap"))
-                {
-                    stats["Trap Cards"]++;
-                }
-            }
-            
-            return stats;
+            return ValidateDeck(deck);
         }
         
-        [Serializable]
-        private class DeckData
+        public string GetDeckValidationError(DeckData deck)
         {
-            public List<Deck> decks;
-            public string activeDeckName;
+            if (string.IsNullOrEmpty(deck.DeckName))
+            {
+                return "Deck name cannot be empty";
+            }
+            
+            if (deck.Cards == null)
+            {
+                return "Deck cards list cannot be null";
+            }
+            
+            if (deck.Cards.Count < 40)
+            {
+                return "Deck must have at least 40 cards";
+            }
+            
+            if (deck.Cards.Count > 60)
+            {
+                return "Deck cannot have more than 60 cards";
+            }
+            
+            var cardCounts = deck.Cards.GroupBy(c => c.CardId)
+                                     .ToDictionary(g => g.Key, g => g.Count());
+            
+            var invalidCards = cardCounts.Where(kvp => kvp.Value > 3)
+                                       .Select(kvp => kvp.Key);
+            
+            if (invalidCards.Any())
+            {
+                return $"Cannot have more than 3 copies of any card: {string.Join(", ", invalidCards)}";
+            }
+            
+            return null;
         }
     }
 } 

@@ -87,8 +87,67 @@ namespace YuGiOh.Managers
         
         private void GameOver()
         {
-            // TODO: Implement game over logic
-            Debug.Log("Game Over!");
+            // Stop all game systems
+            StopAllCoroutines();
+            
+            // Disable player input
+            isGameActive = false;
+            
+            // Show game over UI
+            if (gameOverMenu != null)
+            {
+                gameOverMenu.ShowMainPanel();
+                gameOverMenu.UpdateGameOverInfo(currentWave, CalculateFinalScore());
+                gameOverMenu.FadeBackground(true);
+            }
+            
+            // Save player progress
+            SavePlayerProgress();
+            
+            // Play game over sound
+            if (audioManager != null)
+            {
+                audioManager.PlayGameOverSound();
+            }
+            
+            // Trigger game over event
+            OnGameOver?.Invoke();
+        }
+        
+        private int CalculateFinalScore()
+        {
+            int score = 0;
+            
+            // Base score from waves completed
+            score += currentWave * 1000;
+            
+            // Bonus for remaining life points
+            score += currentLifePoints * 100;
+            
+            // Bonus for remaining duel points
+            score += currentDuelPoints * 10;
+            
+            // Bonus for cards in deck
+            score += playerDeck.Count * 50;
+            
+            return score;
+        }
+        
+        private void SavePlayerProgress()
+        {
+            if (saveManager == null) return;
+            
+            // Create save data
+            PlayerProgress progress = new PlayerProgress
+            {
+                highestWave = Mathf.Max(saveManager.GetHighestWave(), currentWave),
+                totalScore = saveManager.GetTotalScore() + CalculateFinalScore(),
+                unlockedCards = saveManager.GetUnlockedCards(),
+                unlockedItems = saveManager.GetUnlockedItems()
+            };
+            
+            // Save progress
+            saveManager.SaveProgress(progress);
         }
         
         public void RegisterMonster(MonsterCard monster)
