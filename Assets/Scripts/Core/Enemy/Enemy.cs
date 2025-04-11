@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using YuGiOhTowerDefense.Core.Pathfinding;
+using System.Collections;
 
 namespace YuGiOhTowerDefense.Core.Enemy
 {
@@ -135,6 +136,51 @@ namespace YuGiOhTowerDefense.Core.Enemy
             
             // Handle enemy death (e.g., spawn effects, give rewards)
             Destroy(gameObject);
+        }
+        
+        public void ApplyStun(float duration)
+        {
+            StartCoroutine(StunEffect(duration));
+        }
+        
+        private IEnumerator StunEffect(float duration)
+        {
+            float originalSpeed = moveSpeed;
+            moveSpeed = 0f;
+            
+            yield return new WaitForSeconds(duration);
+            
+            moveSpeed = originalSpeed;
+        }
+        
+        public void ApplySlow(float slowAmount, float duration)
+        {
+            StartCoroutine(SlowEffect(slowAmount, duration));
+        }
+        
+        private IEnumerator SlowEffect(float slowAmount, float duration)
+        {
+            float originalSpeed = moveSpeed;
+            moveSpeed *= (1f - slowAmount);
+            
+            yield return new WaitForSeconds(duration);
+            
+            moveSpeed = originalSpeed;
+        }
+        
+        public void ApplyBuff(float buffAmount, float duration)
+        {
+            StartCoroutine(BuffEffect(buffAmount, duration));
+        }
+        
+        private IEnumerator BuffEffect(float buffAmount, float duration)
+        {
+            float originalDamage = damage;
+            damage *= (1f + buffAmount);
+            
+            yield return new WaitForSeconds(duration);
+            
+            damage = originalDamage;
         }
     }
 } 
